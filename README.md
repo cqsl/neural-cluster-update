@@ -1,6 +1,6 @@
 # Unbiased Monte Carlo Cluster Updates with Autoregressive Neural Networks
 
-Paper link: TODO
+Paper link: [arXiv:2105.05650](https://arxiv.org/abs/2105.05650)
 
 The code requires `Python >= 3.6` and `JAX >= 0.2.12`.
 
