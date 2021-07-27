@@ -16,7 +16,7 @@ from net import get_net
 from train import energy_fun, get_log_q_fun, get_sample_fun
 from utils import ensure_dir, get_last_ckpt_step, load_ckpt, my_log, print_args
 
-args.log_filename = '{full_out_dir}sample_cluster_{k_type}_{k_param:.3g}.log'
+args.log_filename = '{full_out_dir}sample_cluster_{k_type}_{k_param:g}.log'
 args.log_filename = args.log_filename.format(**vars(args))
 
 
@@ -131,7 +131,7 @@ def main():
     energy_mean = 0
     energy_sqr_mean = 0
 
-    data_filename = '{full_out_dir}sample_cluster_{k_type}_{k_param:.3g}.hdf5'
+    data_filename = '{full_out_dir}sample_cluster_{k_type}_{k_param:g}.hdf5'
     data_filename = data_filename.format(**vars(args))
     writer_proto = [
         # Uncomment to record all the sampled spins

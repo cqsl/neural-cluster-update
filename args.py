@@ -161,14 +161,12 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 
 
 def get_ham_net_name():
-    ham_name = '{lattice}_L{L}_beta{beta:.3g}'
+    ham_name = '{lattice}_L{L}_beta{beta:g}'
     ham_name = ham_name.format(**vars(args))
 
     net_name = 'nd{net_depth}_nw{net_width}_ks{kernel_size}'
     if args.dilation_step:
         net_name += '_ds{dilation_step}'
-    if args.res_block:
-        net_name += '_rb'
     if args.beta_anneal_step:
         net_name += '_ba{beta_anneal_step}'
     net_name = net_name.format(**vars(args))
