@@ -89,7 +89,7 @@ def get_net():
 
 # Test if the network is autoregressive
 def test_autoreg():
-    batch_size = 4
+    batch_size = 3
     # Index of the changed sample in the batch
     B = 1
 
@@ -105,19 +105,57 @@ def test_autoreg():
 
     for i in range(args.L):
         for j in range(args.L):
-            # Try to change input elements, one at a time
+            # Change one input element at a time
             spins_new = spins.at[B, i, j, 0].set(-spins[B, i, j, 0])
             s_hat_new = net_apply(init_params, spins_new)
-            diff = (s_hat_new - s_hat)[:, :, :, 0]
 
-            # The later output elements will not change
-            for jj in range(j + 1, args.L):
-                diff = diff.at[B, i, jj].set(0)
-            for ii in range(i + 1, args.L):
-                for jj in range(args.L):
-                    diff = diff.at[B, ii, jj].set(0)
-            print(i, j, jnp.allclose(diff, 0))
+            # Sites after (i, j) can change, so we reset them before comparison
+            s_hat_new = s_hat_new.at[B, i, j + 1:].set(s_hat[B, i, j + 1:])
+            s_hat_new = s_hat_new.at[B, i + 1:, :].set(s_hat[B, i + 1:, :])
+
+            print(i, j, jnp.allclose(s_hat_new, s_hat))
+
+
+# Test if the network is normalized
+def test_normalize():
+    args.L = 2
+    batch_size = 2**(args.L**2)
+
+    net_init, net_apply = get_net()
+
+    rng_net, rng_spins = jrand.split(jrand.PRNGKey(args.seed))
+    in_shape = (batch_size, args.L, args.L, 1)
+    out_shape, init_params = net_init(rng_net, in_shape)
+
+    spins = jnp.array([
+        [-1., -1., -1., -1.],
+        [-1., -1., -1., 1.],
+        [-1., -1., 1., -1.],
+        [-1., -1., 1., 1.],
+        [-1., 1., -1., -1.],
+        [-1., 1., -1., 1.],
+        [-1., 1., 1., -1.],
+        [-1., 1., 1., 1.],
+        [1., -1., -1., -1.],
+        [1., -1., -1., 1.],
+        [1., -1., 1., -1.],
+        [1., -1., 1., 1.],
+        [1., 1., -1., -1.],
+        [1., 1., -1., 1.],
+        [1., 1., 1., -1.],
+        [1., 1., 1., 1.],
+    ])
+    spins = spins.reshape(in_shape)
+
+    mask = (spins + 1) / 2
+    s_hat = net_apply(init_params, spins)
+    q = mask * s_hat + (1 - mask) * (1 - s_hat)
+    q = q.prod(axis=(1, 2, 3))
+
+    print(q)
+    print(q.sum())
 
 
 if __name__ == '__main__':
     test_autoreg()
+    test_normalize()

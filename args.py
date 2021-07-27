@@ -2,7 +2,7 @@ import argparse
 import os
 from datetime import datetime
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(allow_abbrev=False)
 
 group = parser.add_argument_group('physics parameters')
 
