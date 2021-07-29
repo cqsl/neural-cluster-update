@@ -6,6 +6,7 @@ from time import time
 
 import numpy as np
 from jax import jit
+from jax import numpy as jnp
 from jax import random as jrand
 
 from args import args
@@ -37,15 +38,29 @@ def main():
         return spins, log_q, energy
 
     @jit
-    def update(spins_old, log_q_old, energy_old, step, rng):
+    def update(spins_old, log_q_old, energy_old, step, energy_mean,
+               energy_sqr_mean, rng):
         rng, rng_sample = jrand.split(rng)
         spins, log_q, energy = sample_energy_fun(rng_sample)
+        mag = spins.mean(axis=(1, 2, 3))
         step += 1
-        return spins, log_q, energy, step, rng
+
+        # TODO: if max_step is large, we need Kahan summation to reduce
+        # the floating point error
+        energy_per_spin = energy / args.L**2
+        energy_mean += (energy_per_spin.mean() - energy_mean) / step
+        energy_sqr_mean += (
+            (energy_per_spin**2).mean() - energy_sqr_mean) / step
+
+        return (spins, log_q, energy, mag, step, energy_mean, energy_sqr_mean,
+                rng)
 
     rng, rng_init = jrand.split(jrand.PRNGKey(args.seed))
     spins, log_q, energy = sample_energy_fun(rng_init)
+
     step = 0
+    energy_mean = 0
+    energy_sqr_mean = 0
 
     data_filename = args.full_out_dir + 'sample_raw.hdf5'
     writer_proto = [
@@ -53,20 +68,25 @@ def main():
         # ('spins', bool, (args.L, args.L)),
         ('log_q', np.float32, None),
         ('energy', np.int32, None),
+        ('mag', np.float32, None),
     ]
     ensure_dir(data_filename)
     with ChunkedDataWriter(data_filename, writer_proto,
                            args.save_step * args.batch_size) as writer:
         my_log('Sampling...')
         while step < args.max_step:
-            spins, log_q, energy, step, rng = update(spins, log_q, energy,
-                                                     step, rng)
-            # writer.write_batch(spins[:, :, :, 0] > 0, log_q, energy)
-            writer.write_batch(log_q, energy)
+            (spins, log_q, energy, mag, step, energy_mean, energy_sqr_mean,
+             rng) = update(spins, log_q, energy, step, energy_mean,
+                           energy_sqr_mean, rng)
+            # writer.write_batch(spins[:, :, :, 0] > 0, log_q, energy, mag)
+            writer.write_batch(log_q, energy, mag)
 
             if args.print_step and step % args.print_step == 0:
+                energy_std = jnp.sqrt(energy_sqr_mean - energy_mean**2)
                 my_log(', '.join([
                     f'step = {step}',
+                    f'E = {energy_mean:.8g}',
+                    f'E_std = {energy_std:.8g}',
                     f'time = {time() - start_time:.3f}',
                 ]))
 
