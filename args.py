@@ -81,7 +81,8 @@ group.add_argument(
     '--beta_anneal_step',
     type=int,
     default=10**4,
-    help='number of steps to gradually increase beta from 0 in training, 0 for disabled',
+    help=
+    'number of steps to gradually increase beta from 0 in training, 0 for disabled',
 )
 group.add_argument(
     '--eps',
@@ -96,20 +97,20 @@ group.add_argument(
     type=str,
     default='exp',
     choices=['exp', 'power', 'const'],
-    help='type of the distribution of k',
+    help='type of the distribution of cluster sizes',
 )
 group.add_argument(
     '--k_param',
     type=float,
     default=1,
-    help='parameter of the distribution of k',
+    help='parameter of the distribution of cluster sizes',
 )
 
 group = parser.add_argument_group('system parameters')
 group.add_argument(
     '--no_stdout',
     action='store_true',
-    help='do not print log to stdout, for better performance',
+    help='do not print log to stdout for better performance',
 )
 group.add_argument(
     '--print_step',
@@ -133,7 +134,8 @@ group.add_argument(
     '--cuda',
     type=str,
     default='0',
-    help='GPU ID, empty string for disabled, multi-GPU parallelism is not supported yet',
+    help=
+    'GPU ID, empty string for disabled, multi-GPU parallelism is not supported yet',
 )
 group.add_argument(
     '--run_name',
@@ -152,7 +154,7 @@ group.add_argument(
 args = parser.parse_args()
 
 if args.seed == 0:
-    # The seed depends on time and PID
+    # The seed depends on the time and the PID
     args.seed = hash((datetime.now(), os.getpid()))
 
 os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'

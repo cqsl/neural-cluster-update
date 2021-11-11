@@ -6,19 +6,18 @@ from time import time
 from jax import grad, jit, lax
 from jax import numpy as jnp
 from jax import random as jrand
-from jax.experimental import optimizers
+from jax.example_libraries import optimizers
 
 from args import args
 from expect import expect
-from net import get_net
+from net import get_net, prev_index_2d
 from utils import (clear_log, get_last_ckpt_step, init_out_dir, load_ckpt,
                    my_log, print_args, save_ckpt)
 
 args.log_filename = args.full_out_dir + 'train.log'
 
 
-# spins: (batch_size, L, L, 1), values in {-1, 1}
-@jit
+# spins: (batch, L, L, 1), values in {-1, 1}
 def energy_fun(spins):
     if args.lattice == 'ising':
         # 2D classical Ising model, square lattice, periodic boundary
@@ -40,33 +39,44 @@ def energy_fun(spins):
 
 
 # We never take the gradient through the sampling procedure
-def get_sample_fun(net_apply):
+def get_sample_fun(net_apply, cache_init):
+    use_fast = (cache_init is not None)
+
     indices = [(i, j) for i in range(args.L) for j in range(args.L)]
-    indices = jnp.array(indices)
+    indices = jnp.asarray(indices)
 
     @partial(jit, static_argnums=0)
     def sample_fun(batch_size, params, rng_init):
-        def scan_fun(carry, index):
-            spins, rng = carry
-            i, j = index
-            rng, rng_now = jrand.split(rng)
+        def scan_fun(carry, _args):
+            spins, cache = carry
+            (i, j), rng = _args
+
+            if use_fast:
+                i_in, j_in = prev_index_2d(i, j, args.L)
+                spins_slice = spins[:, i_in, j_in, :]
+                spins_slice = jnp.expand_dims(spins_slice, axis=(1, 2))
+                s_hat, cache = net_apply(params, spins_slice, cache, (i, j))
+                s_hat = s_hat.squeeze(axis=(1, 2))
+            else:
+                s_hat = net_apply(params, spins)
+                s_hat = s_hat[:, i, j, :]
+
             # s_hat are parameters of Bernoulli distributions
-            s_hat = net_apply(params, spins)
-            spins_now = jrand.bernoulli(rng_now, s_hat[:, i, j, :]).astype(
-                jnp.float32) * 2 - 1
-            spins = spins.at[:, i, j, :].set(spins_now)
-            return (spins, rng), None
+            spins_new = jrand.bernoulli(rng, s_hat).astype(jnp.float32) * 2 - 1
+            spins = spins.at[:, i, j, :].set(spins_new)
 
+            return (spins, cache), None
+
+        rngs = jrand.split(rng_init, args.L**2)
         spins_init = jnp.zeros((batch_size, args.L, args.L, 1))
-        (spins, _), _ = lax.scan(scan_fun, (spins_init, rng_init), indices)
-
+        (spins, _), _ = lax.scan(scan_fun, (spins_init, cache_init),
+                                 (indices, rngs))
         return spins
 
     return sample_fun
 
 
 def get_log_q_fun(net_apply):
-    @jit
     def log_q_fun(params, spins):
         mask = (spins + 1) / 2
         s_hat = net_apply(params, spins)
@@ -87,8 +97,16 @@ def main():
         clear_log()
     print_args()
 
-    net_init, net_apply = get_net()
-    sample_fun = get_sample_fun(net_apply)
+    net_init, net_apply, net_init_cache, net_apply_fast = get_net()
+
+    rng, rng_net = jrand.split(jrand.PRNGKey(args.seed))
+    in_shape = (args.batch_size, args.L, args.L, 1)
+    out_shape, params_init = net_init(rng_net, in_shape)
+
+    _, cache_init = net_init_cache(params_init, jnp.zeros(in_shape), (-1, -1))
+
+    # sample_fun = get_sample_fun(net_apply, None)
+    sample_fun = get_sample_fun(net_apply_fast, cache_init)
     log_q_fun = get_log_q_fun(net_apply)
 
     need_beta_anneal = args.beta_anneal_step > 0
@@ -98,8 +116,8 @@ def main():
     @jit
     def update(step, opt_state, rng):
         params = get_params(opt_state)
-        rng, rng_now = jrand.split(rng)
-        spins = sample_fun(args.batch_size, params, rng_now)
+        rng, rng_sample = jrand.split(rng)
+        spins = sample_fun(args.batch_size, params, rng_sample)
         log_q = log_q_fun(params, spins) / args.L**2
         energy = energy_fun(spins) / args.L**2
 
@@ -112,20 +130,19 @@ def main():
             neg_log_Z = log_q + beta * energy
             return neg_log_Z
 
-        loss_fun = partial(expect, log_q_fun, neg_log_Z_fun)
+        loss_fun = partial(expect,
+                           log_q_fun,
+                           neg_log_Z_fun,
+                           mean_grad_expected_is_zero=True)
         grads = grad(loss_fun)(params, spins, spins)
         opt_state = opt_update(step, grads, opt_state)
 
         return spins, log_q, energy, opt_state, rng
 
-    rng, rng_net = jrand.split(jrand.PRNGKey(args.seed))
-    in_shape = (args.batch_size, args.L, args.L, 1)
-    out_shape, init_params = net_init(rng_net, in_shape)
-
     if last_step >= 0:
-        init_params = load_ckpt(last_step)
+        params_init = load_ckpt(last_step)
 
-    opt_state = opt_init(init_params)
+    opt_state = opt_init(params_init)
 
     my_log('Training...')
     for step in range(last_step + 1, args.max_step + 1):

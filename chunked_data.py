@@ -93,7 +93,7 @@ class ChunkedDataWriter:
         self.flush()
         self.h5file.close()
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, _type, value, traceback):
         self.close()
 
 
@@ -132,11 +132,11 @@ class ChunkedDataReader:
     def __getitem__(self, key):
         if key in self.keys:
             # Data is without chunk
-            return np.array(self.h5file[key])
+            return np.asarray(self.h5file[key])
         return self.get(key)
 
     def close(self):
         self.h5file.close()
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, _type, value, traceback):
         self.close()
